@@ -1,0 +1,29 @@
+(executable
+ (name nbody_serial)
+ (modules nbody_serial)
+ (libraries unix)
+)
+
+(executable
+ (name nbody_domain)
+ (modules nbody_domain)
+ (libraries unix)
+)
+
+(executable
+ (name nbody_task)
+ (modules nbody_task)
+ (libraries unix domainslib)
+)
+
+(executable
+ (name nbody_task_write_optim)
+ (modules nbody_task_write_optim)
+ (libraries unix domainslib)
+)
+
+(executable
+ (name nbody_task_triangle)
+ (modules nbody_task_triangle)
+ (libraries unix domainslib)
+)
