@@ -1,6 +1,6 @@
 # Parallelising your OCaml Code with Multicore OCaml
 
-This repository contains the [abstract](multicore-ocaml20.pdf), [slides](slides.pdf), [speaker notes](slides-with-speaker-notes.pdf), [runnable examples](runnable examples) and other resources for the OCaml Workshop 2020 talk "Parallelising your OCaml Code with Multicore OCaml".
+This repository contains the [abstract](multicore-ocaml20.pdf), [slides](slides.pdf), [speaker notes](slides-with-speaker-notes.pdf), [runnable examples](examples) and other resources for the OCaml Workshop 2020 talk "Parallelising your OCaml Code with Multicore OCaml".
 
 ## Other resources
 
