@@ -1,0 +1,147 @@
+\documentclass[a4paper,twocolumn]{article}
+\usepackage[colorlinks=true]{hyperref}
+\usepackage{graphicx}
+% From libnqsbtls.tex
+\usepackage{xcolor,listings}
+
+\newcommand\inputml[1]{\lstinputlisting[language={[Objective]Caml}]{#1}}
+
+\lstdefinelanguage{OCaml}{
+  keywords={
+    and,as,assert,asr,begin,class,constraint,do,done,downto,effect,else,end,exception,
+    external,false,for,fun,function,functor,if,implicit,in,include,inherit,initializer,
+    land,lazy,let,lor,lsl,lsr,lxor,macro,match,method,mod,module,mutable,new,object,
+    of,open,or,private,rec,sig,struct,then,to,true,try,type,val,virtual,when,
+    with,while},
+  comment=[s]{(*}{*)},
+}
+
+\definecolor{darkgreen}{rgb}{0,0.2,0}
+\definecolor{darkblue}{rgb}{0.1,0.1,0.8}
+\definecolor{darkbrown}{rgb}{0.5,0.3,0.0}
+\definecolor{grey}{rgb}{0.5,0.5,0.5}
+\definecolor{darkgrey}{rgb}{0.2,0.2,0.2}
+
+\lstdefinestyle{ocaml}{
+  basicstyle=\ttfamily, % \small
+  basewidth=0.5em,
+  commentstyle=\color{darkgreen},
+  escapeinside={(**}{)},
+  keywordstyle=\color{darkblue},
+  language=OCaml,
+  morekeywords={macro},
+  stringstyle=\color{blue},
+  showstringspaces=false,
+  mathescape=true,
+  moredelim=**[is][]{?}{?},
+  moredelim=**[is][]{&}{&},
+}
+
+\lstset{literate=%
+{->}{{$\to$}}2
+{...}{{$\ldots$}}2
+}
+
+\begin{document}
+
+\title{Experiences with Effects}
+\author{Thomas Leonard\and
+        Craig Ferguson\and
+        Patrick Ferris\and
+        Sadiq Jaffer\and
+        Tom Kelly\and
+        KC Sivaramakrishnan\and
+        Anil Madhavapeddy}
+\maketitle
+
+\begin{abstract}
+The multicore branch of OCaml adds support for \emph{effect handlers}\footnote{Retrofitting Effect Handlers onto OCaml, accepted to PLDI 2021}.
+Using effects brings several advantages over using callbacks or monadic style (as in Lwt):
+
+\begin{itemize}
+\item It is faster, because no heap allocations are needed to simulate a stack.
+\item Concurrent code can be written in the same style as plain non-concurrent code.
+\item Because a real stack is used, backtraces from exceptions work as expected.
+\item Other features of the language (such as {\tt try ... with ...}) can be used in concurrent code.
+\end{itemize}
+
+In this talk we report on our experiences using effects.
+We examine the Angstrom parser library, and modify it to take advantage of effects.
+The resulting code is much simpler, slightly faster, and performs far fewer heap allocations.
+
+We then describe eio, our new library for effect-based IO\footnote{\url{https://github.com/ocaml-multicore/eio}}.
+
+\end{abstract}
+
+\section*{Effects}
+
+Effects are implemented as resumable exceptions.
+Installing an effect handler creates a new stack.
+Reference paper.
+
+\section*{Angstrom parser}
+
+A natural implementation for a parser is a function that takes an input stream and returns the parsed result.
+This works well if the complete input is preset at the start, or if the application can block while waiting for more data.
+
+However, if the parser needs to run concurrently with other code (as is typical in a network service), then this API needs to change so that when it requires more input the parser returns a callback to the application.
+Angstrom\footnote{https://github.com/inhabitedtype/angstrom/} is a parser-combinator library written in this way.
+It is intended for high-performance applications, such as network protocols.
+
+To give a quick idea of the difference between the callback style and the direct style, here is Angstrom's implementation of the \verb|*>| combinator (which uses a pair of parsers \verb|a| and \verb|b| to parse a pair of items, discarding the first result):
+\begin{lstlisting}[style=ocaml]
+let (*>) a b =
+  { run = fun input pos more fail succ ->
+    let succ' input' pos' more' _ =
+      b.run input' pos' more' fail succ in
+    a.run input pos more fail succ'
+  }
+\end{lstlisting}
+
+Here is the same thing written in direct style (without support for asynchronous reads):
+\begin{lstlisting}[style=ocaml]
+let (*>) a b state =
+  let _ = a state in
+  b state
+\end{lstlisting}
+
+% Mention use of exceptions?
+
+But now, thanks to effects, the simpler direct-style version \emph{does} support asynchronous reads.
+If the \verb|a| or \verb|b| parser needs more input, it can perform an effect to get it.
+
+Interestingly, the ``effects" version doesn't actually perform or handle any effects.
+Instead, it allows the user to provide a function for reading more data,
+and if that function happens to perform an effect that suspends the parsing operation during the read
+then the parse runs concurrently.
+
+An initial benchmark (parsing an HTTP request) shows that the simpler direct-style version of Angstrom is also slightly faster, and performs considerably fewer allocations:
+
+\begin{figure}[h]
+\begin{tabular}{l|rrrrr}
+          & Time     & MinWrds &  MajWrds \\
+\hline
+Callbacks & 11.18ms  & 4640k   &    50471 \\
+Effects   & 10.46ms  & 1066k   &      285 \\
+\end{tabular}
+\end{figure}
+
+\section*{Effects-based IO}
+
+In our new experimental IO library we are using the effects system to provide direct-style IO,
+without the need for monads.
+Like Mirage, the new library aims to support multiple platforms.
+Using effects, we can remove many uses of functors in Mirage.
+
+In the talk we will demonstrate the current state of the library, and provide comparisons between Lwt and Eio.
+
+Talk about Linux and macos backends.
+
+\section*{HTTP benchmarks}
+
+TODO Sadiq
+
+\section*{Summary}
+
+
+\end{document}
