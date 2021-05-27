@@ -134,6 +134,7 @@ We can also implement the old (callback-based) API on top of the new one, for co
 The refill-buffer effect is only performed rarely, and so we only allocate a callback occasionally,
 when more data is actually needed, not for every parsing operation.
 
+
 \section*{Effects-based IO}
 
 It is easy to use effects to implement a cooperative scheduler,
@@ -151,6 +152,23 @@ In the talk we will demonstrate the current state of the library, and provide co
 
 \section*{HTTP benchmarks}
 
-TODO Sadiq
+Results from our preliminary benchmarking of HTTP servers indicate that an effect-based IO library is competitive both with callback-based OCaml implementatons but also commonly used frameworks in other languages, such as Go's \emph{net/http}. There remains a performance gap between the OCaml implementations and high performaning Rust ones, the closing of which is a goal we intend to provide more progress on in the talk.
+
+\begin{figure}[hbtp]
+\caption{HTTP throughput comparison}
+\centering
+\includegraphics[width=0.45\textwidth]{rps-graph.png}
+\end{figure}
+
+Figure 1 shows a throughput comparison of several HTTP server implementations:
+\begin{itemize}
+\item OCaml 4.12 with cohttp 4.0 and Lwt 5.4.0 (cohttp\_lwt\_unix)
+\item OCaml 4.12 with httpaf 0.7.1 and Lwt 5.4.0 (httpaf\_lwt)
+\item OCaml 4.12+domains+effects with 0.7.1 and aeio 0.2.0 (httpaf\_effects)
+\item Go 1.15.4 with net/http (nethttp\_go)
+\item rust 1.47.0 with hyper 0.12 and tokio 0.1.11 (rust\_hyper)
+\end{itemize}
+
+All benchmarks were restricted to one core. The results above were from an Intel(R) Xeon(R) Silver 4108 CPU with turbo disabled running Ubuntu 18.04.3 LTS and Linux 4.15.0-65-generic. Code for the specific run used for benchmarking can be found at https://github.com/ocaml-multicore/retro-httpaf-bench/tree/ocamlworkshop2021 .
 
 \end{document}
