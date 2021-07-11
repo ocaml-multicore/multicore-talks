@@ -1,7 +1,7 @@
-all: eio.pdf
+all: eio.pdf slides.pdf
 
 %.pdf: %.tex
-	pdflatex $<
+	pdflatex -halt-on-error $<
 
 docker:
 	docker build -t latex .
