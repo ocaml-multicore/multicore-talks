@@ -396,6 +396,31 @@ let main ~net =
 \end{frame}
 
 \begin{frame}
+	\frametitle{Eio : migrating from old-style code}
+  Switching to effects in OCaml 5.0 turns out to be great timing in the bigger picture.
+	\begin{itemize}
+		\item There has been a slow but steady shift to better system interfaces for async
+		\item Io\_uring (Linux), Grand Central Dispatch (macOS), IOCP (Windows)
+		\item These all make effect-based IO incredibly straightforward and elegant.
+	\end{itemize}
+\end{frame}
+
+\begin{frame}
+	\frametitle{Eio : post-POSIX, with io\_uring}
+  \includegraphics[width=\textwidth]{uring.png}
+\end{frame}
+
+\begin{frame}
+	\frametitle{Eio : post-POSIX}
+		\begin{itemize}
+      \item No more fd-set management and scalability bottlenecks, so great time for new post-POSIX interfaces
+      \item \textbf{Concurrency-friendly:} Just stash a single-shot continuation and call it when IO is ready, or raise exception if IO is cancelled. 
+      \item \textbf{Parallel-friendly:} Push batch onto a shared memory ring and get responses back with one syscall.
+      \item \textbf{Hardware-friendly:} Very similar to hypervisor-level interfaces, but from userspace.
+    \end{itemize}    
+\end{frame}
+
+\begin{frame}
 	\frametitle{Summary of OCaml 5.0 and our use of effects}
 	\begin{itemize}
 		\item Concurrency with effects works very well and is ergonomic to program with
