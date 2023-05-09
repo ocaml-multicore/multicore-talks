@@ -1,0 +1,170 @@
+\documentclass[a4paper,twocolumn]{article}
+\usepackage[colorlinks=true]{hyperref}
+\usepackage{graphicx}
+% From libnqsbtls.tex
+\usepackage{xcolor,listings}
+
+\newcommand\inputml[1]{\lstinputlisting[language={[Objective]Caml}]{#1}}
+
+\lstdefinelanguage{OCaml}{
+  keywords={
+    and,as,assert,asr,begin,class,constraint,do,done,downto,effect,else,end,exception,
+    external,false,for,fun,function,functor,if,implicit,in,include,inherit,initializer,
+    land,lazy,let,lor,lsl,lsr,lxor,macro,match,method,mod,module,mutable,new,object,
+    of,open,or,private,rec,sig,struct,then,to,true,try,type,val,virtual,when,
+    with,while},
+  comment=[s]{(*\ }{\ *)},
+}
+
+\definecolor{darkgreen}{rgb}{0,0.2,0}
+\definecolor{darkblue}{rgb}{0.1,0.1,0.8}
+\definecolor{darkbrown}{rgb}{0.5,0.3,0.0}
+\definecolor{grey}{rgb}{0.5,0.5,0.5}
+\definecolor{darkgrey}{rgb}{0.2,0.2,0.2}
+
+\lstdefinestyle{ocaml}{
+  basicstyle=\ttfamily, % \small
+  basewidth=0.5em,
+  commentstyle=\color{darkgreen},
+  escapeinside={(**}{)},
+  keywordstyle=\color{darkblue},
+  language=OCaml,
+  morekeywords={macro},
+  stringstyle=\color{blue},
+  showstringspaces=false,
+  mathescape=true,
+  moredelim=**[is][]{?}{?},
+  moredelim=**[is][]{&}{&},
+}
+
+\lstset{literate=%
+{->}{{$\to$}}2
+{...}{{$\ldots$}}2
+}
+
+\begin{document}
+
+\title{Eio 1.0}
+\author{Thomas Leonard\and
+        Patrick Ferris\and
+        Christiano Haesbaert\and
+        Lucas Pluvinage\and
+        Vesa Karvonen\and
+        Sudha Parimala\and
+        KC Sivaramakrishnan\and
+	Vincent Balat\and
+        Anil Madhavapeddy}
+\maketitle
+
+\begin{abstract}
+
+Eio provides an effects-based direct-style IO stack for OCaml 5. This talk introduces Eio's main features, such as use of effects, multi-core support and lock-free data-structures, support for modular programming, and interoperability with other concurrency libraries such as Lwt, Async and Domainslib. We’ll also look at some of the new monitoring support enabled by the custom runtime events in OCaml 5.1.
+
+\end{abstract}
+
+\section*{Motivation}
+
+OCaml 5 added support for progamming with \emph{effects}, which has many advantages over using callbacks or monadic style: it is faster, because no heap allocations are needed to simulate a stack; concurrent code can be written in the same style as plain non-concurrent code; exception backtraces work; and other features of the language (such as {\tt try}/{\tt with}, {\tt match}, {\tt while}, etc) can be used in concurrent code.
+
+OCaml 5 also added support for running on multiple cores,
+allowing much better performance
+(but requiring thread-safe implementations of the concurrency primitives such as promises and mutexes).
+
+Given the benefits of these new features, there is a lot of interest in moving existing OCaml code to a new IO library.
+This is a good opportunity to bring the community together around a single IO API, as well as upgrading our IO support with modern features, such as optimised backends (e.g. \verb|io_uring|), structured concurrency, improved security, testing and tracing.
+
+\section*{Structure of Eio}
+
+The core of Eio includes the \verb|Fiber| module, which allows spawning new fibers,
+\verb|Cancel| for cancellation, and \verb|Switch| for managing lifetimes.
+
+To use Eio, you use a \emph{backend} to run a suitable event loop for your platform.
+The event loop must implement the three effects defined by the core:
+
+\begin{description}
+	\item{\verb|Suspend|} suspends the calling fiber, switching to the scheduler's context and providing access to the fiber context.
+	\item{\verb|Fork|} runs a new fiber (with its own stack).
+	\item{\verb|Get_context|} gets the fiber context (used for cancellation and fiber-local storage).
+\end{description}
+
+The \verb|eio_mock| scheduler performs no IO and is around 50 lines of code.
+It is intended for running tests that don't interact with the outside world,
+but it also provides a good starting point to learn how to write a backend.
+
+Other backends include \verb|eio_posix| (which uses the \verb|poll| system call to wait for IO),
+\verb|eio_linux| (using Linux's \verb|io_uring| system), \verb|eio_windows|,
+\verb|eio_js| (running inside a browser with \verb|js_of_ocaml|) and \verb|eio_solo5| (for Mirage unikernels).
+
+Each backend provides a ``low-level'' API that mimicks the platform's native API, but uses effects so that operations don't block the whole domain. For example, \verb|Eio_posix.Low_level| provides:
+
+\begin{lstlisting}[style=ocaml,basicstyle=\small]
+val read : fd -> bytes -> int -> int -> int
+val write : fd -> bytes -> int -> int -> int
+\end{lstlisting}
+
+These two functions have the same signatures as their counterparts in OCaml's Unix module
+(except that \verb|fd| wraps \verb|Unix.file_descr| to prevent use-after-free bugs).
+Internally, these calls use backend-specific effects to switch to the next runnable fiber while they wait.
+
+Eio then defines a cross-platform API, and each backend implements some or all of this API using its low-level functions.
+It is expected that users will normally program against this cross-platform API, for portability.
+The \verb|eio_main| package selects an appropriate backend for the current platform automatically.
+
+\section*{Modularity}
+
+Eio has a number of design features intended to support modularity:
+
+Every OS resource (e.g. an open file handle) must be attached to an active \emph{switch},
+and will be closed when the switch is turned off.
+This helps to prevent resource leaks, especially when errors occur.
+
+It uses \emph{structured concurrency}, so that fibers have well defined life-times.
+This also uses the switch mechanism, treating fibers as resources.
+
+Eio has built-in support for cancellation. This is essential when using structured concurrency,
+because if one fiber fails then the others must finish before the error can be reported to the parent context.
+
+Eio wraps file descriptors using a (lock-free) ref-counting scheme.
+This ensures that one module in a program cannot access another module's resources
+by using a file descriptor after it has been closed.
+
+Finally, instead of representing the initially-available OS resources (such as the filesystem and network) as globals,
+Eio passes them as arguments to the application when the main event loop is started.
+This makes it easy to get a bound on how the program, or any part of it, can interact with the outside world.
+
+\section*{Integrations}
+
+The \verb|Lwt_eio| package provides a Lwt engine that simply delegates to Eio's event loop.
+The \verb|run_lwt| function runs a Lwt function, blocking the Eio fiber until the result is ready,
+while \verb|run_eio| allows Lwt code to run Eio code, getting a promise for its result.
+This allows Lwt and Eio code to be mixed freely, which allows existing code to be migrated to Eio in stages.
+For example, \verb|tls-eio| was created by starting from \verb|tls-lwt| and converting the code line by line,
+testing it along the way.
+
+Similarly, \verb|Async_eio| allows Async and Eio code to be used together in a single domain.
+It is even possible to use Async, Eio and Lwt all at the same time!
+
+Lwt and Async code can only run in a single domain,
+and their tasks are scheduled cooperatively with Eio fibers running in the same domain.
+Integration with Domainslib is slightly different, as it manages a set of domains.
+Here, we provide a bridge allowing Domainslib jobs to be run from Eio and the results collected.
+This bridge is possible because \verb|Domainslib.Task.async| is able to run from an Eio domain,
+and \verb|Eio.Promise.resolve| is able to run from a Domainslib one.
+
+Finally, kcas provides software transactional memory based on an atomic lock-free multi-word compare-and-set (MCAS) algorithm.
+Eio and Domainslib both implement the \verb|domain-local-await| interface,
+allowing kcas operations to span domains controlled by both systems.
+
+\section*{Tracing}
+
+Eio can output trace data to a ring buffer, which can be viewed using mirage-trace-viewer.
+With OCaml 5.1, this has been updated to work with the new custom events support, so that e.g. GC events are included too.
+
+The Meio (Monitoring for Eio) project provides a console-based tool for inspecting a running Eio process,
+showing the tree of fibers along with profiling information.
+
+\section*{TODO}
+
+Include some multi-core benchmarks? Talk about lock-free data-structures? Show some example applications?
+
+\end{document}
