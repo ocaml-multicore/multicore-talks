@@ -58,28 +58,28 @@
 
 \begin{abstract}
 
-Eio provides an effects-based direct-style IO stack for OCaml 5. This talk introduces Eio's main features, such as use of effects, multi-core support and lock-free data-structures, support for modular programming, and interoperability with other concurrency libraries such as Lwt, Async and Domainslib. We’ll also look at some of the new monitoring support enabled by the custom runtime events in OCaml 5.1.
+Eio\footnote{\url{https://github.com/ocaml-multicore/eio}} provides an effects-based direct-style IO stack for OCaml 5. This talk introduces Eio's main features, such as use of effects, multi-core support and lock-free data-structures, support for modular programming, interoperability with other concurrency libraries such as Lwt, Async and Domainslib, and interactive monitoring support enabled by the custom runtime events in OCaml 5.1.
+We will report on our experiences porting existing applications to Eio.
 
 \end{abstract}
 
 \section*{Motivation}
 
 OCaml 5 added support for progamming with \emph{effects}, which has many advantages over using callbacks or monadic style: it is faster, because no heap allocations are needed to simulate a stack; concurrent code can be written in the same style as plain non-concurrent code; exception backtraces work; and other features of the language (such as {\tt try}/{\tt with}, {\tt match}, {\tt while}, etc) can be used in concurrent code.
-
-OCaml 5 also added support for running on multiple cores,
-allowing much better performance
-(but requiring thread-safe implementations of the concurrency primitives such as promises and mutexes).
+OCaml 5 also added support for running on multiple cores, allowing much improved performance.
 
 Given the benefits of these new features, there is a lot of interest in moving existing OCaml code to a new IO library.
 This is a good opportunity to bring the community together around a single IO API, as well as upgrading our IO support with modern features, such as optimised backends (e.g. \verb|io_uring|), structured concurrency, improved security, testing and tracing.
 
 \section*{Structure of Eio}
 
-The core of Eio includes the \verb|Fiber| module, which allows spawning new fibers,
-\verb|Cancel| for cancellation, and \verb|Switch| for managing lifetimes.
+Eio is made up of several packages.
+The \verb|eio| package itself is similar in scope to \verb|lwt|:
+it provides primitives for spawning and coordinating fibers, cancelling them, and managing resource lifetimes.
 
-To use Eio, you use a \emph{backend} to run a suitable event loop for your platform.
-The event loop must implement the three effects defined by the core:
+To use Eio, you also require a \emph{backend} to run a suitable event loop for your platform
+(\verb|lwt.unix| is roughly equivalent to an Eio backend).
+The event loop must implement the three effects defined by the \verb|eio| package:
 
 \begin{description}
 	\item{\verb|Suspend|} suspends the calling fiber, switching to the scheduler's context and providing access to the fiber context.
@@ -87,13 +87,15 @@ The event loop must implement the three effects defined by the core:
 	\item{\verb|Get_context|} gets the fiber context (used for cancellation and fiber-local storage).
 \end{description}
 
-The \verb|eio_mock| scheduler performs no IO and is around 50 lines of code.
+The \verb|eio_mock| backend performs no IO and is around 50 lines of code.
 It is intended for running tests that don't interact with the outside world,
 but it also provides a good starting point to learn how to write a backend.
 
 Other backends include \verb|eio_posix| (which uses the \verb|poll| system call to wait for IO),
-\verb|eio_linux| (using Linux's \verb|io_uring| system), \verb|eio_windows|,
-\verb|eio_js| (running inside a browser with \verb|js_of_ocaml|) and \verb|eio_solo5| (for Mirage unikernels).
+\verb|eio_linux| (using Linux's \verb|io_uring| system\footnote{\url{https://github.com/axboe/liburing}}),
+\verb|eio_windows|,
+\verb|eio_js| (running inside a browser with \verb|js_of_ocaml|\footnote{\url{https://ocsigen.org/js_of_ocaml/}}),
+and \verb|eio_solo5| (for Mirage unikernels\footnote{\url{https://mirage.io/}}).
 
 Each backend provides a ``low-level'' API that mimicks the platform's native API, but uses effects so that operations don't block the whole domain. For example, \verb|Eio_posix.Low_level| provides:
 
@@ -103,7 +105,7 @@ val write : fd -> bytes -> int -> int -> int
 \end{lstlisting}
 
 These two functions have the same signatures as their counterparts in OCaml's Unix module
-(except that \verb|fd| wraps \verb|Unix.file_descr| to prevent use-after-free bugs).
+(except that \verb|fd| wraps \verb|Unix.file_descr| to prevent use-after-close bugs).
 Internally, these calls use backend-specific effects to switch to the next runnable fiber while they wait.
 
 Eio then defines a cross-platform API, and each backend implements some or all of this API using its low-level functions.
@@ -118,14 +120,14 @@ Every OS resource (e.g. an open file handle) must be attached to an active \emph
 and will be closed when the switch is turned off.
 This helps to prevent resource leaks, especially when errors occur.
 
-It uses \emph{structured concurrency}, so that fibers have well defined life-times.
+It uses \emph{structured concurrency}, so that fibers have well defined lifetimes.
 This also uses the switch mechanism, treating fibers as resources.
 
 Eio has built-in support for cancellation. This is essential when using structured concurrency,
 because if one fiber fails then the others must finish before the error can be reported to the parent context.
 
 Eio wraps file descriptors using a (lock-free) ref-counting scheme.
-This ensures that one module in a program cannot access another module's resources
+This ensures that one module in a program cannot corrupt another module's resources
 by using a file descriptor after it has been closed.
 
 Finally, instead of representing the initially-available OS resources (such as the filesystem and network) as globals,
@@ -134,37 +136,33 @@ This makes it easy to get a bound on how the program, or any part of it, can int
 
 \section*{Integrations}
 
-The \verb|Lwt_eio| package provides a Lwt engine that simply delegates to Eio's event loop.
+The \verb|Lwt_eio|\footnote{\url{https://github.com/ocaml-multicore/lwt_eio}} package provides a Lwt engine that simply delegates to Eio's event loop.
 The \verb|run_lwt| function runs a Lwt function, blocking the Eio fiber until the result is ready,
 while \verb|run_eio| allows Lwt code to run Eio code, getting a promise for its result.
 This allows Lwt and Eio code to be mixed freely, which allows existing code to be migrated to Eio in stages.
 For example, \verb|tls-eio| was created by starting from \verb|tls-lwt| and converting the code line by line,
 testing it along the way.
 
-Similarly, \verb|Async_eio| allows Async and Eio code to be used together in a single domain.
+Similarly, \verb|Async_eio|\footnote{\url{https://github.com/talex5/async_eio}} allows Async and Eio to be used together in a single domain.
 It is even possible to use Async, Eio and Lwt all at the same time!
 
 Lwt and Async code can only run in a single domain,
-and their tasks are scheduled cooperatively with Eio fibers running in the same domain.
-Integration with Domainslib is slightly different, as it manages a set of domains.
+and their tasks are scheduled cooperatively with any Eio fibers running in the same domain.
+Integration with Domainslib\footnote{\url{https://github.com/ocaml-multicore/domainslib}} is slightly different,
+as it manages a set of domains.
 Here, we provide a bridge allowing Domainslib jobs to be run from Eio and the results collected.
 This bridge is possible because \verb|Domainslib.Task.async| is able to run from an Eio domain,
 and \verb|Eio.Promise.resolve| is able to run from a Domainslib one.
 
-Finally, kcas provides software transactional memory based on an atomic lock-free multi-word compare-and-set (MCAS) algorithm.
-Eio and Domainslib both implement the \verb|domain-local-await| interface,
+Finally, kcas\footnote{\url{https://github.com/ocaml-multicore/kcas}} provides software transactional memory based on an atomic lock-free multi-word compare-and-set (MCAS) algorithm.
+Eio and Domainslib both implement the \verb|domain-local-await| interface\footnote{\url{https://github.com/ocaml-multicore/domain-local-await}},
 allowing kcas operations to span domains controlled by both systems.
 
 \section*{Tracing}
 
 Eio can output trace data to a ring buffer, which can be viewed using mirage-trace-viewer.
 With OCaml 5.1, this has been updated to work with the new custom events support, so that e.g. GC events are included too.
-
-The Meio (Monitoring for Eio) project provides a console-based tool for inspecting a running Eio process,
+The Meio\footnote{\url{https://github.com/tarides/meio}} (Monitoring for Eio) project provides a console-based tool for inspecting a running Eio process,
 showing the tree of fibers along with profiling information.
-
-\section*{TODO}
-
-Include some multi-core benchmarks? Talk about lock-free data-structures? Show some example applications?
 
 \end{document}
