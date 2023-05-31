@@ -1,4 +1,4 @@
-all: eio.pdf slides.pdf
+all: eio.pdf
 
 %.pdf: %.tex
 	pdflatex -halt-on-error $<
