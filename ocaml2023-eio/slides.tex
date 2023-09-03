@@ -82,7 +82,6 @@
 	\begin{itemize}
 		\item Support effects
 		\begin{itemize}
-			\item No difference between sequential and concurrent code
 			\item No special monad syntax
 			\item Can use \mlkeyword{try}, \mlkeyword{match}, \mlkeyword{while}, etc
 			\item No separate Lwt or Async versions of code
@@ -204,103 +203,6 @@ Async_eio.with_event_loop @@ fun _ ->
 \end{frame}
 
 
-% \begin{frame}
-% 	\frametitle{Parsing benchmark}
-% 	\includegraphics[width=\textwidth]{parsing.png}
-% 	Parsing 100,000,000 bytes, one at a time:
-% 	\begin{itemize}
-% 		\item With a 4096-byte buffer (3.7x faster)
-% 		\item With a 512-byte buffer (7.1x faster)
-% 		\item With four runs in parallel (7.4x faster)
-% 	\end{itemize}
-% \end{frame}
-
-\begin{frame}[fragile]
-	\frametitle{perf : test code}
-\begin{tabular}{ll}
-        Eio & Lwt \\
-\begin{lstlisting}[style=ocaml,boxpos=t]
-  let run_task1 () =
-    for _ = 1 to 2000 do
-      do_work ()
-    done
-
-  let run_task2 () =
-    for _ = 1 to 2000 do
-      do_work ()
-    done
-
-  let run () =
-    Fiber.both run_task1 run_task2
-\end{lstlisting}&
-\begin{lstlisting}[style=ocaml,boxpos=t]
-  let run_task1 () =
-    let rec outer = function
-      | 0 -> Lwt.return_unit
-      | i ->
-        let* () = do_work () in
-        outer (i - 1)
-    in
-    outer 2000
-
-  let run_task2 () = ...
-
-  let run () =
-    Lwt.join [
-      run_task1 ();
-      run_task2 ();
-    ]
-\end{lstlisting}
-\end{tabular}
-\end{frame}
-
-\begin{frame}[fragile]
-	\frametitle{perf : results}
-        \verb|perf| shows \verb|task1| vs \verb|task2| for Eio part:
-	\scriptsize
-\begin{verbatim}
-- 49.94% Lwt_main.run_495
-   - Lwt_main.run_loop_435
-      - 49.83% Lwt_sequence.loop_346
-         - Lwt.callback_1373
-            - 49.77% Dune.exe.Perf.fun_967
-               + 49.77% Dune.exe.Perf.use_cpu_273
-- 49.90% Eio_linux.Sched.with_sched_inner_3088
-   - 49.89% Eio_linux.Sched.with_eventfd_1738
-      - Stdlib.Fun.protect_320
-         - 49.86% caml_runstack
-            - Eio.core.Fiber.fun_1369
-               - 25.07% Dune.exe.Perf.run_task2_425
-                  + Dune.exe.Perf.use_cpu_273
-               - 24.78% Dune.exe.Perf.run_task1_421
-                  + 24.77% Dune.exe.Perf.use_cpu_273
-\end{verbatim}
-\end{frame}
-
-% \begin{frame}[fragile]
-% 	\frametitle{Error reporting}
-% 	\begin{itemize}
-% 		\item Eio takes care to preserve stack-traces
-% 		\item \verb|Lwt.join| waits for all threads before reporting errors;
-% 		      errors may never be seen
-% 		\item \verb|Eio.Fiber.both| cancels the other fiber
-% 	\end{itemize}
-% 	\bigskip
-% 	\begin{lstlisting}[style=ocaml]
-% Fiber.both
-%   (fun () ->
-%      for x = 1 to 1000 do
-%        traceln "x = %d" x;
-%        Fiber.yield ()
-%      done
-%   )
-%   (fun () -> failwith "Simulated error")
-% 
-% +x = 1
-% Exception: Failure "Simulated error"
-% 	\end{lstlisting}
-% \end{frame}
-
 \begin{frame}[fragile]
 	\frametitle{Resource leaks}
 	\begin{itemize}
@@ -390,6 +292,110 @@ let () =
 	\end{itemize}
 	\bigskip
 	\url{https://github.com/ocaml-multicore/eio}
+\end{frame}
+
+\begin{frame}
+	\frametitle{Questions}
+\end{frame}
+
+% Backup slides
+
+\begin{frame}[fragile]
+	\frametitle{perf : test code}
+\begin{tabular}{ll}
+        Eio & Lwt \\
+\begin{lstlisting}[style=ocaml,boxpos=t]
+  let run_task1 () =
+    for _ = 1 to 2000 do
+      do_work ()
+    done
+
+  let run_task2 () =
+    for _ = 1 to 2000 do
+      do_work ()
+    done
+
+  let run () =
+    Fiber.both run_task1 run_task2
+\end{lstlisting}&
+\begin{lstlisting}[style=ocaml,boxpos=t]
+  let run_task1 () =
+    let rec outer = function
+      | 0 -> Lwt.return_unit
+      | i ->
+        let* () = do_work () in
+        outer (i - 1)
+    in
+    outer 2000
+
+  let run_task2 () = ...
+
+  let run () =
+    Lwt.join [
+      run_task1 ();
+      run_task2 ();
+    ]
+\end{lstlisting}
+\end{tabular}
+\end{frame}
+
+\begin{frame}[fragile]
+	\frametitle{perf : results}
+        \verb|perf| shows \verb|task1| vs \verb|task2| for Eio part:
+	\scriptsize
+\begin{verbatim}
+- 49.94% Lwt_main.run_495
+   - Lwt_main.run_loop_435
+      - 49.83% Lwt_sequence.loop_346
+         - Lwt.callback_1373
+            - 49.77% Dune.exe.Perf.fun_967
+               + 49.77% Dune.exe.Perf.use_cpu_273
+- 49.90% Eio_linux.Sched.with_sched_inner_3088
+   - 49.89% Eio_linux.Sched.with_eventfd_1738
+      - Stdlib.Fun.protect_320
+         - 49.86% caml_runstack
+            - Eio.core.Fiber.fun_1369
+               - 25.07% Dune.exe.Perf.run_task2_425
+                  + Dune.exe.Perf.use_cpu_273
+               - 24.78% Dune.exe.Perf.run_task1_421
+                  + 24.77% Dune.exe.Perf.use_cpu_273
+\end{verbatim}
+\end{frame}
+
+
+\begin{frame}[fragile]
+	\frametitle{Error reporting}
+	\begin{itemize}
+		\item Eio takes care to preserve stack-traces
+		\item \verb|Lwt.join| waits for all threads before reporting errors;
+		      errors may never be seen
+		\item \verb|Eio.Fiber.both| cancels the other fiber
+	\end{itemize}
+	\bigskip
+	\begin{lstlisting}[style=ocaml]
+Fiber.both
+  (fun () ->
+     for x = 1 to 1000 do
+       traceln "x = %d" x;
+       Fiber.yield ()
+     done
+  )
+  (fun () -> failwith "Simulated error")
+
++x = 1
+Exception: Failure "Simulated error"
+	\end{lstlisting}
+\end{frame}
+
+\begin{frame}
+	\frametitle{Parsing benchmark}
+	\includegraphics[width=\textwidth]{parsing.png}
+	Parsing 100,000,000 bytes, one at a time:
+	\begin{itemize}
+		\item With a 4096-byte buffer (3.7x faster)
+		\item With a 512-byte buffer (7.1x faster)
+		\item With four runs in parallel (7.4x faster)
+	\end{itemize}
 \end{frame}
 
 \end{document}
