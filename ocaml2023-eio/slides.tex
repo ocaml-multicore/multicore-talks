@@ -309,18 +309,18 @@ Async_eio.with_event_loop @@ fun _ ->
 	\end{itemize}
 	Eio:
 	\begin{lstlisting}[style=ocaml]
-	Switch.run @@ fun sw ->
-	let conn, _addr = Eio.Net.accept ~sw socket in
-	...
-        Eio.Net.close conn      (* Optional *)
+	let accept socket =
+	  Switch.run @@ fun sw ->
+	  let conn, _addr = Eio.Net.accept ~sw socket in
+	  ...
+          Eio.Net.close conn      (* Optional *)
 	\end{lstlisting}
         Lwt (leaks \verb|conn| if cancelled):
 	\begin{lstlisting}[style=ocaml]
-	let* () = Lwt_unix.bind socket addr in
-	Lwt_unix.listen socket 5;
-	let* conn, _addr = Lwt_unix.accept socket in
-	...
-	Lwt_unix.close conn
+	let accept socket =
+	  let* conn, _addr = Lwt_unix.accept socket in
+	  ...
+	  Lwt_unix.close conn
 	\end{lstlisting}
 \end{frame}
 
@@ -367,7 +367,7 @@ let () =
 \begin{frame}
 	\frametitle{Experiences porting software}
 	\begin{itemize}
-		\item Solver service
+		\item Solver service (cache-dir bug)
 		\item Wayland proxy
 		\item Libraries: ocaml-tls, cohttp, dream, capnp-rpc, ...
 	\end{itemize}
