@@ -97,7 +97,11 @@
 \begin{frame}[fragile]
 	\frametitle{Eio packages}
 	\begin{itemize}
-		\item Eio defines a generic API
+                \item Eio defines:
+                        \begin{itemize}
+                                \item 3 effects (\verb|Suspend|, \verb|Fork|, \verb|Get_context|)
+                                \item Generic cross-platform APIs
+                        \end{itemize}
 		\item Backends for various platforms
 		\item \verb|eio_main| chooses the best backend
 	\end{itemize}
@@ -273,29 +277,29 @@ Async_eio.with_event_loop @@ fun _ ->
 \end{verbatim}
 \end{frame}
 
-\begin{frame}[fragile]
-	\frametitle{Error reporting}
-	\begin{itemize}
-		\item Eio takes care to preserve stack-traces
-		\item \verb|Lwt.join| waits for all threads before reporting errors;
-		      errors may never be seen
-		\item \verb|Eio.Fiber.both| cancels the other fiber
-	\end{itemize}
-	\bigskip
-	\begin{lstlisting}[style=ocaml]
-Fiber.both
-  (fun () ->
-     for x = 1 to 1000 do
-       traceln "x = %d" x;
-       Fiber.yield ()
-     done
-  )
-  (fun () -> failwith "Simulated error")
-
-+x = 1
-Exception: Failure "Simulated error"
-	\end{lstlisting}
-\end{frame}
+% \begin{frame}[fragile]
+% 	\frametitle{Error reporting}
+% 	\begin{itemize}
+% 		\item Eio takes care to preserve stack-traces
+% 		\item \verb|Lwt.join| waits for all threads before reporting errors;
+% 		      errors may never be seen
+% 		\item \verb|Eio.Fiber.both| cancels the other fiber
+% 	\end{itemize}
+% 	\bigskip
+% 	\begin{lstlisting}[style=ocaml]
+% Fiber.both
+%   (fun () ->
+%      for x = 1 to 1000 do
+%        traceln "x = %d" x;
+%        Fiber.yield ()
+%      done
+%   )
+%   (fun () -> failwith "Simulated error")
+% 
+% +x = 1
+% Exception: Failure "Simulated error"
+% 	\end{lstlisting}
+% \end{frame}
 
 \begin{frame}[fragile]
 	\frametitle{Resource leaks}
